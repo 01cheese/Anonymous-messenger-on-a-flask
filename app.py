@@ -1,12 +1,16 @@
+
 from flask import Flask, render_template, redirect, url_for, request, session
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate  # Импортируем Flask-Migrate
 from uuid import uuid4
+from flask_socketio import SocketIO, send
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///db.sqlite'
 app.config['SECRET_KEY'] = 'your_secret_key'  # Замените на случайное значение для безопасности
 db = SQLAlchemy(app)
+
+socketio = SocketIO(app)  # Инициализация SocketIO
 
 
 # Инициализируем Flask-Migrate
@@ -49,7 +53,7 @@ def join_chat(chat_link):
     if request.method == 'POST':
         username = request.form['username']
 
-        # Проверяем, чтобы пользователь не пытался занять оба места
+        # Проверка, чтобы тот же пользователь не пытался войти дважды
         if session.get('username') in [chat.user_1, chat.user_2]:
             return redirect(url_for('chat_room', chat_link=chat_link))
 
@@ -78,6 +82,16 @@ def chat_room(chat_link):
 
     return render_template('chat.html', chat=chat)
 
+# WebSocket обработчик для получения сообщений
+@socketio.on('message')
+def handle_message(msg):
+    print(f"Message: {msg}")
+    send(msg, broadcast=True)
+
+if __name__ == '__main__':
+    with app.app_context():
+        db.create_all()
+    socketio.run(app, debug=True)
 
 # Запуск приложения
 if __name__ == '__main__':

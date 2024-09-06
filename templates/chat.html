@@ -7,7 +7,34 @@
 </head>
 <body>
     <h2>Чат между {{ chat.user_1 }} и {{ chat.user_2 }}</h2>
-    <p>Добро пожаловать в чат!</p>
-    <!-- Здесь можно добавить функционал реального времени через WebSockets -->
+
+<div id="messages"></div>
+
+<input type="text" id="message_input" placeholder="Введите сообщение">
+<button onclick="sendMessage()">Отправить</button>
+
+<script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
+<script>
+    var socket = io();
+
+    socket.on('connect', function() {
+        console.log('Connected to chat');
+    });
+
+    socket.on('message', function(msg) {
+        var messages = document.getElementById('messages');
+        var newMessage = document.createElement('p');
+        newMessage.textContent = msg;
+        messages.appendChild(newMessage);
+    });
+
+    function sendMessage() {
+        var input = document.getElementById('message_input');
+        var message = input.value;
+        socket.send(message);
+        input.value = '';  // Очистим поле ввода после отправки
+    }
+</script>
+
 </body>
 </html>

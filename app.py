@@ -1,30 +1,34 @@
-
-from flask import Flask, render_template, redirect, url_for, request, session
+from flask import Flask, render_template, redirect, url_for, request, abort
 from flask_sqlalchemy import SQLAlchemy
-from flask_migrate import Migrate  # Импортируем Flask-Migrate
-from uuid import uuid4
-from flask_socketio import SocketIO, send
+from flask_socketio import SocketIO, join_room, leave_room, send
+import uuid
+from datetime import datetime
 
 app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///db.sqlite'
-app.config['SECRET_KEY'] = 'your_secret_key'  # Замените на случайное значение для безопасности
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///chat.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
-
-socketio = SocketIO(app)  # Инициализация SocketIO
-
-
-# Инициализируем Flask-Migrate
-migrate = Migrate(app, db)
+socketio = SocketIO(app)
 
 
+# Модель комнаты
+class Room(db.Model):
+    id = db.Column(db.String(36), primary_key=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-# Модель чата
-class Chat(db.Model):
+
+# Модель сообщения
+class Message(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    chat_link = db.Column(db.String(100), unique=True)
-    user_1 = db.Column(db.String(100), nullable=True)
-    user_2 = db.Column(db.String(100), nullable=True)
+    room_id = db.Column(db.String(36), db.ForeignKey('room.id'), nullable=False)
+    username = db.Column(db.String(50), nullable=False)
+    content = db.Column(db.Text, nullable=False)
+    timestamp = db.Column(db.String(5), nullable=False)
 
+
+# Инициализация базы данных
+with app.app_context():
+    db.create_all()
 
 
 # Главная страница
@@ -33,68 +37,84 @@ def index():
     return render_template('index.html')
 
 
-# Создание нового чата
-@app.route('/create_chat', methods=['POST'])
-def create_chat():
-    chat_link = str(uuid4())
-    chat = Chat(chat_link=chat_link)
-    db.session.add(chat)
+# Маршрут для создания комнаты
+@app.route('/create_room')
+def create_room():
+    room_id = str(uuid.uuid4())  # Генерация уникального идентификатора комнаты
+    new_room = Room(id=room_id)
+    db.session.add(new_room)
     db.session.commit()
-    return f'Ссылка на чат: {request.host_url}join_chat/{chat_link}'
+    room_link = request.host_url + 'room/' + room_id  # Создание полной ссылки на комнату
+    return render_template('room_link.html', room_link=room_link)
 
 
-# Присоединение к чату
-@app.route('/join_chat/<chat_link>', methods=['GET', 'POST'])
-def join_chat(chat_link):
-    chat = Chat.query.filter_by(chat_link=chat_link).first()
-    if not chat:
-        return "Чат не найден", 404
-
-    if request.method == 'POST':
-        username = request.form['username']
-
-        # Проверка, чтобы тот же пользователь не пытался войти дважды
-        if session.get('username') in [chat.user_1, chat.user_2]:
-            return redirect(url_for('chat_room', chat_link=chat_link))
-
-        if chat.user_1 is None:
-            chat.user_1 = username
-        elif chat.user_2 is None:
-            chat.user_2 = username
-        else:
-            return "Чат уже полон!", 400
-
-        db.session.commit()
-        session['username'] = username
-        return redirect(url_for('chat_room', chat_link=chat_link))
-
-    return render_template('join_chat.html', chat=chat)
+# Маршрут для комнаты чата
+@app.route('/room/<room_id>')
+def chat_room(room_id):
+    room = Room.query.get(room_id)
+    if not room:  # Проверка, существует ли комната
+        abort(404)  # Возврат 404, если комната не найдена
+    return render_template('chat_room.html', room_id=room_id)
 
 
-# Комната чата
-@app.route('/chat_room/<chat_link>')
-def chat_room(chat_link):
-    chat = Chat.query.filter_by(chat_link=chat_link).first()
-    if not chat:
-        return "Чат не найден", 404
-    if session.get('username') not in [chat.user_1, chat.user_2]:
-        return "Вы не участник этого чата", 403
+# Обработчик для подключения пользователя к комнате
+@socketio.on('join')
+def on_join(data):
+    room_id = data['room']
+    username = data['username']
+    join_room(room_id)
 
-    return render_template('chat.html', chat=chat)
+    # Отправка предыдущих сообщений пользователю
+    messages = Message.query.filter_by(room_id=room_id).all()
+    for msg in messages:
+        send({'username': msg.username, 'message': msg.content, 'time': msg.timestamp}, to=request.sid)
 
-# WebSocket обработчик для получения сообщений
+    # Системное сообщение о присоединении
+    system_message = {
+        'username': 'System',
+        'message': f"{username} has joined the room",
+        'time': datetime.now().strftime('%H:%M'),
+        'type': 'system'
+    }
+
+    send(system_message, to=room_id)
+
+
+# Обработчик для отправки сообщений
 @socketio.on('message')
-def handle_message(msg):
-    print(f"Message: {msg}")
-    send(msg, broadcast=True)
+def handle_message(data):
+    room_id = data['room']
+    message = data['message']
+    username = data['username']
+
+    # Форматируем время отправки сообщения
+    timestamp = datetime.now().strftime('%H:%M')
+
+    # Сохранение сообщения в базе данных
+    new_message = Message(room_id=room_id, username=username, content=message, timestamp=timestamp)
+    db.session.add(new_message)
+    db.session.commit()
+
+    # Отправка сообщения в комнату
+    send({'username': username, 'message': message, 'time': timestamp}, to=room_id)
+
+
+@socketio.on('leave')
+def on_leave(data):
+    room_id = data['room']
+    username = data['username']
+    leave_room(room_id)
+
+    # Системное сообщение о выходе
+    system_message = {
+        'username': 'System',
+        'message': f"{username} has left the room",
+        'time': datetime.now().strftime('%H:%M'),
+        'type': 'system'
+    }
+
+    send(system_message, to=room_id)
+
 
 if __name__ == '__main__':
-    with app.app_context():
-        db.create_all()
     socketio.run(app, debug=True)
-
-# Запуск приложения
-if __name__ == '__main__':
-    with app.app_context():
-        db.create_all()  # Создаем таблицы при запуске
-    app.run(debug=True)

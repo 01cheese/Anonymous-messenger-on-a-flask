@@ -3,38 +3,68 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Чат</title>
+    <title>Чат между {{ chat.user_1 }} и {{ chat.user_2 }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body>
     <h2>Чат между {{ chat.user_1 }} и {{ chat.user_2 }}</h2>
 
-<div id="messages"></div>
+    <div id="messages">
+        <!-- Загружаем существующие сообщения из базы данных -->
+        {% for message in messages %}
+        <div class="message {{ 'self' if message.username == session['username'] else 'other' }}" id="message-{{ message.id }}">
+            <p>{{ message.message }}</p>
+            <div class="meta">От: {{ message.username }} | Время: {{ message.timestamp.strftime('%H:%M:%S') }}</div>
+        </div>
+        {% endfor %}
+    </div>
 
-<input type="text" id="message_input" placeholder="Введите сообщение">
-<button onclick="sendMessage()">Отправить</button>
+    <div id="input-area">
+        <input type="text" id="message_input" placeholder="Введите сообщение">
+        <button onclick="sendMessage()">Отправить</button>
+    </div>
 
-<script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
-<script>
-    var socket = io();
+    <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
+    <script>
+        var socket = io();
+        var currentUsername = "{{ session.get('username') }}";
 
-    socket.on('connect', function() {
-        console.log('Connected to chat');
-    });
+        socket.on('connect', function() {
+            console.log('Connected to chat');
+        });
 
-    socket.on('message', function(msg) {
-        var messages = document.getElementById('messages');
-        var newMessage = document.createElement('p');
-        newMessage.textContent = msg;
-        messages.appendChild(newMessage);
-    });
+        socket.on('message', function(msg) {
+            displayMessage(msg);
+        });
 
-    function sendMessage() {
-        var input = document.getElementById('message_input');
-        var message = input.value;
-        socket.send(message);
-        input.value = '';  // Очистим поле ввода после отправки
-    }
-</script>
+        function sendMessage() {
+            var input = document.getElementById('message_input');
+            var message = input.value;
 
+            var messageData = {
+                'username': currentUsername,
+                'message': message
+            };
+
+            socket.send(messageData);
+            input.value = '';
+        }
+
+        function displayMessage(data) {
+            var messagesDiv = document.getElementById('messages');
+            var newMessageDiv = document.createElement('div');
+            newMessageDiv.classList.add('message');
+            newMessageDiv.classList.add(data.username === currentUsername ? 'self' : 'other');
+            newMessageDiv.id = `message-${data.id}`;
+
+            newMessageDiv.innerHTML = `
+                <p>${data.message}</p>
+                <div class="meta">От: ${data.username} | Время: ${new Date(data.timestamp).toLocaleTimeString()}</div>
+            `;
+
+            messagesDiv.appendChild(newMessageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+    </script>
 </body>
 </html>

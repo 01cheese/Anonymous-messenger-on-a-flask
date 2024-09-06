@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Room Link</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>Share this Room Link:</h1>
+        <p id="room-link">{{ room_link }}</p>
+        <button onclick="copyLink()">Copy Link</button>
+    </div>
+
+    <script>
+        function copyLink() {
+            var roomLink = document.getElementById('room-link').innerText;
+            navigator.clipboard.writeText(roomLink).then(function() {
+                alert('Link copied to clipboard');
+            }, function() {
+                alert('Failed to copy link');
+            });
+        }
+    </script>
+</body>
+</html>

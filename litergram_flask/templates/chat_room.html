@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat Room</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.0/socket.io.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>Chat Room: {{ room_id }}</h1>
+
+        <div id="messages">
+            <p><em>No messages yet...</em></p>
+        </div>
+
+        <form id="usernameForm">
+            <input type="text" id="username" placeholder="Enter your name..." autocomplete="off">
+            <button type="submit">Join Chat</button>
+        </form>
+
+        <form id="messageForm" style="display:none;">
+            <input type="text" id="message" placeholder="Type a message..." autocomplete="off">
+            <button type="submit">Send</button>
+            <button type="button" id="leaveRoom">Leave Room</button>
+        </form>
+    </div>
+
+    <script type="text/javascript">
+        var socket = io.connect('http://' + document.domain + ':' + location.port);
+        var room_id = "{{ room_id }}";
+        var username = localStorage.getItem('username') || ''; // Сохраняем имя пользователя в localStorage
+
+        var usernameForm = document.getElementById('usernameForm');
+        var messageForm = document.getElementById('messageForm');
+
+        // Если имя пользователя уже сохранено, автоматически подключаем к чату
+        if (username) {
+            joinChat();
+        }
+
+        // Обработка отправки формы для присоединения к чату
+        usernameForm.onsubmit = function(e) {
+            e.preventDefault();
+            username = document.getElementById('username').value;
+            if (username) {
+                localStorage.setItem('username', username);  // Сохраняем имя в localStorage
+                joinChat();
+            }
+        };
+
+        function joinChat() {
+            socket.emit('join', {'room': room_id, 'username': username});
+            usernameForm.style.display = 'none';
+            messageForm.style.display = 'block';
+        }
+
+        // Обработка получения сообщений, включая системные
+        socket.on('message', function(data) {
+            var messages = document.getElementById('messages');
+            var newMessage = document.createElement('div');
+
+            // Проверка типа сообщения
+            if (data.type === 'system') {
+                newMessage.classList.add('system-message');
+                newMessage.innerHTML = `<em>${data.message}</em> <span class="timestamp">${data.time}</span>`;
+            } else {
+                newMessage.classList.add('message');
+                if (data.username === username) {
+                    newMessage.classList.add('my-message');
+                } else {
+                    newMessage.classList.add('other-message');
+                }
+                newMessage.innerHTML = `<strong>${data.username}</strong>: ${data.message} <span class="timestamp">${data.time}</span>`;
+            }
+
+            // Добавляем новое сообщение в конец чата
+            messages.appendChild(newMessage);
+            messages.scrollTop = messages.scrollHeight;  // Прокручиваем вниз
+        });
+
+        // Когда пользователь присоединяется к комнате
+        socket.emit('join', {'room': room_id, 'username': username});
+
+        // Отправка сообщения
+        var form = document.getElementById('messageForm');
+        form.onsubmit = function(e) {
+            e.preventDefault();
+            var messageInput = document.getElementById('message');
+            var message = messageInput.value;
+            socket.emit('message', {'message': message, 'room': room_id, 'username': username});
+            messageInput.value = '';
+        };
+
+        // Выход из комнаты
+        var leaveButton = document.getElementById('leaveRoom');
+        leaveButton.onclick = function() {
+            socket.emit('leave', {'room': room_id, 'username': username});
+            localStorage.removeItem('username');  // Удаляем имя пользователя из localStorage при выходе
+            messageForm.style.display = 'none';
+            usernameForm.style.display = 'block';
+        };
+    </script>
+</body>
+</html>

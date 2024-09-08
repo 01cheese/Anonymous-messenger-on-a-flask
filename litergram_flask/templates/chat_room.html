@@ -7,6 +7,7 @@
     <title>Chat Room</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.0/socket.io.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script> <!-- Библиотека для шифрования -->
 </head>
 <body>
     <div class="container">
@@ -57,15 +58,37 @@
             messageForm.style.display = 'block';
         }
 
-        // Обработка получения сообщений, включая системные
+        // Шифрование сообщения перед отправкой
+        function encryptMessage(message, key) {
+            return CryptoJS.AES.encrypt(message, key).toString();
+        }
+
+        // Расшифровка сообщения при получении
+        function decryptMessage(encryptedMessage, key) {
+            return CryptoJS.AES.decrypt(encryptedMessage, key).toString(CryptoJS.enc.Utf8);
+        }
+
+        // Генерация ключа (здесь упрощенная версия с использованием фиксированного ключа)
+        var encryptionKey = 'my-secret-key'; // В реальном проекте ключ должен быть уникальным и безопасным
+
+        // Обработка получения сообщений
         socket.on('message', function(data) {
             var messages = document.getElementById('messages');
             var newMessage = document.createElement('div');
 
+            // Если сервер сообщает, что комната удалена, перенаправляем на страницу 404
+            if (data.message === 'This chat room no longer exists.') {
+                window.location.href = '/404';
+                return;  // Прекращаем дальнейшую обработку
+            }
+
+            // Расшифровываем сообщение
+            var decryptedMessage = decryptMessage(data.message, encryptionKey);
+
             // Проверка типа сообщения
             if (data.type === 'system') {
                 newMessage.classList.add('system-message');
-                newMessage.innerHTML = `<em>${data.message}</em> <span class="timestamp">${data.time}</span>`;
+                newMessage.innerHTML = `<em>${decryptedMessage}</em>`;
             } else {
                 newMessage.classList.add('message');
                 if (data.username === username) {
@@ -73,12 +96,11 @@
                 } else {
                     newMessage.classList.add('other-message');
                 }
-                newMessage.innerHTML = `<strong>${data.username}</strong>: ${data.message} <span class="timestamp">${data.time}</span>`;
+                newMessage.innerHTML = `<strong>${data.username}</strong>: ${decryptedMessage} <span class="timestamp">${data.time}</span>`;
             }
 
-            // Добавляем новое сообщение в конец чата
             messages.appendChild(newMessage);
-            messages.scrollTop = messages.scrollHeight;  // Прокручиваем вниз
+            messages.scrollTop = messages.scrollHeight;
         });
 
         // Когда пользователь присоединяется к комнате
@@ -90,7 +112,11 @@
             e.preventDefault();
             var messageInput = document.getElementById('message');
             var message = messageInput.value;
-            socket.emit('message', {'message': message, 'room': room_id, 'username': username});
+
+            // Шифруем сообщение перед отправкой
+            var encryptedMessage = encryptMessage(message, encryptionKey);
+
+            socket.emit('message', {'message': encryptedMessage, 'room': room_id, 'username': username});
             messageInput.value = '';
         };
 

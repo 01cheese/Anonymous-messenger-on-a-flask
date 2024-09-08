@@ -126,7 +126,7 @@ def on_leave(data):
 def delete_inactive_rooms():
     with app.app_context():  # Входим в контекст приложения
         now = datetime.utcnow()
-        threshold = now - timedelta(seconds=10)  # Порог активности: 1 минута
+        threshold = now - timedelta(seconds=3600*48)  # Порог активности: 1 минута
         inactive_rooms = Room.query.filter(Room.last_activity < threshold).all()
 
         for room in inactive_rooms:
@@ -139,7 +139,7 @@ def delete_inactive_rooms():
 
 # Инициализация планировщика задач
 scheduler = BackgroundScheduler()
-scheduler.add_job(func=delete_inactive_rooms, trigger="interval", seconds=1)  # Проверка каждые 30 секунд
+scheduler.add_job(func=delete_inactive_rooms, trigger="interval", seconds=3600)  # Проверка каждые 30 секунд
 scheduler.start()
 
 # Остановка планировщика при завершении работы приложения
